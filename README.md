@@ -8,6 +8,18 @@ In Lab 2, you implemented GEMM kernels using shared memory tiling and loop unrol
 
 Modern GPU architectures (Volta and newer) include dedicated Tensor Core hardware that can perform 16x16x16 matrix multiply-accumulate operations in a single instruction across an entire warp. Combined with asynchronous memory copy (`cuda::memcpy_async`), which allows data movement from global to shared memory without occupying CUDA cores, these features represent the building blocks of production-grade GEMM implementations such as those in cuBLAS and CUTLASS.
 
+### What is `cp.async` (LDGSTS)?
+
+In traditional CUDA kernels, loading data from global memory into shared memory is a two-step process: threads first load data into registers (`LDG`), then store from registers into shared memory (`STS`). This occupies CUDA cores for the entire transfer and stalls warps while waiting on memory latency.
+
+Starting with Ampere (sm_80), NVIDIA introduced the **`cp.async`** instruction (also called **LDGSTS** — Load Global, Store Shared). This is a single hardware instruction that copies data directly from global memory to shared memory, **bypassing registers entirely**. The key benefits are:
+
+1. **Non-blocking**: The copy is issued asynchronously — CUDA cores are free to execute other instructions (e.g., Tensor Core math) while the data transfer happens in the background.
+2. **Bypasses L1 cache**: Data goes directly to shared memory, avoiding L1 pollution and reducing cache pressure.
+3. **Enables pipelining**: Combined with `cuda::pipeline`, you can overlap the loading of the *next* tile with computation on the *current* tile (double buffering), hiding memory latency behind useful work.
+
+On Volta (sm_70), `cuda::memcpy_async` compiles to the traditional two-step LDG+STS path as a software fallback — it is functionally correct but does not provide the performance benefits of hardware `cp.async`.
+
 ## Problem Definition
 
 Compute **C = A * B** where:
@@ -167,7 +179,7 @@ Both kernels must produce **0 errors** against the shared-memory reference.
 |-----------|--------|
 | Part A: `gemm_wmma_smem` | 35 |
 | Part B: `gemm_wmma_async` | 35 |
-| Report (`report.md`) | 30 |
+| Report (`report.md`) — see questions inside | 30 |
 | **Total** | **100** |
 
 ## Submission
