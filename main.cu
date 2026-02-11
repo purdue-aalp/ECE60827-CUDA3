@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include <mma.h>
@@ -88,7 +89,19 @@ __global__ void gemm_wmma_async(const half *A, const half *B, float *C,
 // ============================================================
 //  Main
 // ============================================================
-int main() {
+int main(int argc, char **argv) {
+	// Parse arguments: --part-a, --part-b, or run both by default
+	bool run_a = false, run_b = false;
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--part-a") == 0) run_a = true;
+		else if (strcmp(argv[i], "--part-b") == 0) run_b = true;
+		else {
+			fprintf(stderr, "Usage: %s [--part-a] [--part-b]\n", argv[0]);
+			return 1;
+		}
+	}
+	if (!run_a && !run_b) { run_a = true; run_b = true; }
+
 	int M = 1024, K = 1024, N = 1024;
 
 	size_t sizeA_half = M * K * sizeof(half);
@@ -123,6 +136,7 @@ int main() {
 	float *h_C_ref   = (float *)malloc(sizeC);  // shared-mem (golden)
 	float *h_C_tc    = (float *)malloc(sizeC);   // tensor core
 	float *h_C_async = (float *)malloc(sizeC);   // async memcpy
+	bool failed = false;
 
 	// ----------------------------------------------------------
 	//  1) Reference: Shared-memory tiled GEMM
@@ -147,7 +161,7 @@ int main() {
 	// ----------------------------------------------------------
 	//  2) Student kernel: Tensor Core GEMM with shared memory
 	// ----------------------------------------------------------
-	{
+	if (run_a) {
 		dim3 threads(128, 1);
 		dim3 blocks((N + WMMA_N * 4 - 1) / (WMMA_N * 4),
 		            (M + WMMA_M - 1) / WMMA_M);
@@ -165,12 +179,30 @@ int main() {
 		gpuErrchk(cudaMemcpy(h_C_tc, d_C, sizeC, cudaMemcpyDeviceToHost));
 
 		printf("WMMA+smem GEMM (%dx%d)*(%dx%d):    %.3f ms\n", M, K, K, N, ms);
+
+		int errors = 0;
+		float maxErr = 0.0f;
+		for (int i = 0; i < M * N; i++) {
+			float diff = fabs(h_C_tc[i] - h_C_ref[i]);
+			float denom = fabs(h_C_ref[i]) > 0.0f ? fabs(h_C_ref[i]) : 1.0f;
+			float rel = diff / denom;
+			if (rel > maxErr) maxErr = rel;
+			if (rel > 1e-2f) errors++;
+		}
+		printf("\nVerification (WMMA+smem vs shared-mem golden):\n");
+		printf("  Errors   : %d / %d\n", errors, M * N);
+		printf("  Max rel err: %.6f\n\n", maxErr);
+
+		if (errors > 0) {
+			fprintf(stdout, "FAILED: WMMA+smem error too large (%d errors, max rel err %.6f)\n", errors, maxErr);
+			failed = true;
+		}
 	}
 
 	// ----------------------------------------------------------
 	//  3) Student kernel: Async memcpy + pipelined Tensor Core GEMM
 	// ----------------------------------------------------------
-	{
+	if (run_b) {
 		dim3 threads(128, 1);
 		dim3 blocks((N + WMMA_N * 4 - 1) / (WMMA_N * 4),
 		            (M + ASYNC_TILE_M - 1) / ASYNC_TILE_M);
@@ -188,26 +220,7 @@ int main() {
 		gpuErrchk(cudaMemcpy(h_C_async, d_C, sizeC, cudaMemcpyDeviceToHost));
 
 		printf("WMMA+async GEMM (%dx%d)*(%dx%d):   %.3f ms\n", M, K, K, N, ms);
-	}
 
-	// ----------------------------------------------------------
-	//  Verify student results against shared-mem golden
-	// ----------------------------------------------------------
-	{
-		int errors = 0;
-		float maxErr = 0.0f;
-		for (int i = 0; i < M * N; i++) {
-			float diff = fabs(h_C_tc[i] - h_C_ref[i]);
-			float denom = fabs(h_C_ref[i]) > 0.0f ? fabs(h_C_ref[i]) : 1.0f;
-			float rel = diff / denom;
-			if (rel > maxErr) maxErr = rel;
-			if (rel > 1e-2f) errors++;
-		}
-		printf("\nVerification (WMMA+smem vs shared-mem golden):\n");
-		printf("  Errors   : %d / %d\n", errors, M * N);
-		printf("  Max rel err: %.6f\n", maxErr);
-	}
-	{
 		int errors = 0;
 		float maxErr = 0.0f;
 		for (int i = 0; i < M * N; i++) {
@@ -219,7 +232,12 @@ int main() {
 		}
 		printf("\nVerification (WMMA+async vs shared-mem golden):\n");
 		printf("  Errors   : %d / %d\n", errors, M * N);
-		printf("  Max rel err: %.6f\n", maxErr);
+		printf("  Max rel err: %.6f\n\n", maxErr);
+
+		if (errors > 0) {
+			fprintf(stdout, "FAILED: WMMA+async error too large (%d errors, max rel err %.6f)\n", errors, maxErr);
+			failed = true;
+		}
 	}
 
 	// Cleanup
@@ -228,5 +246,5 @@ int main() {
 	cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
 	free(h_A); free(h_B); free(h_C); free(h_C_ref); free(h_C_tc); free(h_C_async);
 
-	return 0;
+	return failed ? 1 : 0;
 }

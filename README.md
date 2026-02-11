@@ -30,7 +30,7 @@ The starter code in `lab3.cu` contains **three GEMM kernels**:
 
 The given `gemm_tiled_smem` kernel serves as the **correctness reference**. Your implementations will be verified against it using a relative error tolerance of 1e-2.
 
-### Part A: Tensor Core GEMM with Shared Memory (30 pts)
+### Part A: Tensor Core GEMM with Shared Memory (35 pts)
 
 Implement the `gemm_wmma_smem` kernel. This kernel should:
 
@@ -44,7 +44,7 @@ Implement the `gemm_wmma_smem` kernel. This kernel should:
 
 **Shared memory layout:** Single buffer with space for one A tile (`WMMA_M x WMMA_K`) and one B tile (`WMMA_K x (WMMA_N * 4)`) that covers all 4 warps' columns.
 
-### Part B: Tensor Core GEMM with Async Memcpy + Pipelining (30 pts)
+### Part B: Tensor Core GEMM with Async Memcpy + Pipelining (35 pts)
 
 Implement the `gemm_wmma_async` kernel. This kernel builds on Part A by replacing regular loads with **asynchronous memory copies** and using **double buffering** to overlap data loading with Tensor Core computation:
 
@@ -123,21 +123,23 @@ pipe.consumer_release();
 
 ## Build & Run
 
-On the cluster:
+Build and run via Slurm:
 ```bash
-module load gcc cuda
-ssh tgrogers-gpu01
-
-make
-./lab3
+module load gcc/11.4.1 cuda
+make          # builds locally
+make test     # runs both parts via Slurm
 ```
 
-Or with Slurm:
+If Slurm is unavailable, run locally (e.g. on a GPU node via `ssh`):
 ```bash
-module load gcc cuda
+module load gcc/11.4.1 cuda
 make
-srun --gres=gpu:1 ./lab3
+make test-local       # runs both parts locally
+make test-a-local     # runs Part A only
+make test-b-local     # runs Part B only
 ```
+
+**Note:** On Volta (sm_70) GPUs, `cuda::memcpy_async` lacks hardware LDGSTS support and falls back to software emulation, so Part B may run slower than Part A. This is expected — only correctness is graded, not performance.
 
 ## Expected Output
 
@@ -158,13 +160,14 @@ Verification (WMMA+async vs shared-mem golden):
 
 Both kernels must produce **0 errors** against the shared-memory reference.
 
+
 ## Grading
 
 | Component | Points |
 |-----------|--------|
-| Part A: `gemm_wmma_smem` | 30 |
-| Part B: `gemm_wmma_async` | 30 |
-| Report (`report.md`) | 40 |
+| Part A: `gemm_wmma_smem` | 35 |
+| Part B: `gemm_wmma_async` | 35 |
+| Report (`report.md`) | 30 |
 | **Total** | **100** |
 
 ## Submission

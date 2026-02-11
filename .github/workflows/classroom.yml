@@ -1,0 +1,72 @@
+name: Autograding Tests
+
+'on':
+  - push
+  - repository_dispatch
+
+permissions:
+  checks: write
+  actions: read
+  contents: read
+
+jobs:
+  run-autograding-tests:
+    runs-on: self-hosted
+
+    if: github.actor != 'github-classroom[bot]'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # -----------------------------
+    # Build step (fails job on error)
+    # -----------------------------
+    - name: Build
+      run: |
+        set -e
+        module load gcc/11.4.1 cuda
+        bash -c 'module load gcc/11.4.1 cuda && make clean && make'
+
+    # -----------------------------
+    # Part A: WMMA + Shared Memory GEMM (35 points)
+    # -----------------------------
+    - name: Part A - WMMA Shared Memory GEMM
+      id: part-a
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: "Part A - WMMA Shared Memory GEMM (35 points)"
+        command: >
+          bash -lc '
+            module load gcc/11.4.1 cuda &&
+            srun -A gpu -p scholar-h,scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-a"
+          '
+        timeout: 120
+        max-score: 35
+
+    # -----------------------------
+    # Part B: WMMA + Async Memcpy GEMM (35 points)
+    # -----------------------------
+    - name: Part B - WMMA Async Memcpy GEMM
+      id: part-b
+      uses: classroom-resources/autograding-command-grader@v1
+      with:
+        test-name: "Part B - WMMA Async Memcpy GEMM (35 points)"
+        command: >
+          bash -lc '
+            module load gcc/11.4.1 cuda &&
+            srun -A gpu -p scholar-h,scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-b"
+          '
+        timeout: 120
+        max-score: 35
+
+    # -----------------------------
+    # Report grades (MUST be last)
+    # -----------------------------
+    - name: Autograding Reporter
+      uses: classroom-resources/autograding-grading-reporter@v1
+      env:
+        PART-A_RESULTS: "${{ steps.part-a.outputs.result }}"
+        PART-B_RESULTS: "${{ steps.part-b.outputs.result }}"
+      with:
+        runners: part-a,part-b
