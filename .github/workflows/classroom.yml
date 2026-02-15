@@ -39,9 +39,9 @@ jobs:
         command: >
           bash -lc '
             module load gcc/11.4.1 cuda &&
-            srun -A gpu -p scholar-h,scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-a"
+            srun -A gpu-mig -p scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-a"
           '
-        timeout: 120
+        timeout: 5
         max-score: 35
 
     # -----------------------------
@@ -55,9 +55,9 @@ jobs:
         command: >
           bash -lc '
             module load gcc/11.4.1 cuda &&
-            srun -A gpu -p scholar-h,scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-b"
+            srun -A gpu-mig -p scholar-h-mig,scholar-i-mig --gres=gpu:1 bash -c "module load gcc/11.4.1 cuda && ./lab3 --part-b"
           '
-        timeout: 120
+        timeout: 5
         max-score: 35
 
     # -----------------------------
