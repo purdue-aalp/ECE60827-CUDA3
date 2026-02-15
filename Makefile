@@ -5,7 +5,7 @@ TARGET = lab3
 
 SRCS = main.cu lab3.cu
 
-SRUN = srun -A gpu -p scholar-h,scholar-h-mig,scholar-i-mig --gres=gpu:1
+SRUN = srun -A gpu-mig -p scholar-h-mig,scholar-i-mig --gres=gpu:1
 
 all: $(TARGET)
 
